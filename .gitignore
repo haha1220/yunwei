@@ -1,0 +1,6 @@
+localconfig.py
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
