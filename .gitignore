@@ -4,3 +4,4 @@ localconfig.py
 *.egg-info
 dist
 build
+checkout
