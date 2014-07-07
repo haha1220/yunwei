@@ -88,9 +88,6 @@ def get_intended_members(metaview):
 
 
 def sync_members(metaview):
-    log = []
-    _log = lambda x, u: log.append((x, u))
-
     current_members = set(get_current_members())
     intended_members = set(get_intended_members(metaview))
 
@@ -98,16 +95,20 @@ def sync_members(metaview):
     for member in intended_members:
         if member not in current_members:
             add_member(member)
-            _log('added', member)
+            yield 'added', member
         else:
-            _log('retained', member)
+            yield 'retained', member
         new_members.add(member)
 
     for member in current_members - new_members:
         remove_member(member)
-        _log('deleted', member)
+        yield 'deleted', member
 
-    return log
+
+def sync_projects(metaview):
+    for project in metaview.iter_projects():
+        project.sync()
+        yield project.internal_name
 
 
 def git(*args, **extra):
@@ -230,10 +231,14 @@ def get_project_api(short_name):
     return project.to_json()
 
 
-@app.route('/sync/members', methods=['POST'])
+@app.route('/sync', methods=['POST'])
 @require_hook_secret
-def sync_members_api():
-    return jsonify(operations=sync_members(get_metaview(sync=True)))
+def sync_api():
+    metaview = get_metaview(sync=True)
+    return jsonify(
+        member_changes=list(sync_members(metaview)),
+        project_changes=list(sync_projects(metaview)),
+    )
 
 
 @app.cli.group('sync')
@@ -262,5 +267,17 @@ def sync_members_cmd():
                 'deleted': 'red',
             }[op]),
             member,
+        ))
+    click.echo('Done.')
+
+
+@sync_cmd.command('projects')
+def sync_projects_cmd():
+    """Synchronizes all project meta info."""
+    click.echo('Synchronizing projects')
+    for project in sync_projects(get_metaview(sync=True)):
+        click.echo('  %s %s' % (
+            click.style('updated', fg='cyan'),
+            project,
         ))
     click.echo('Done.')

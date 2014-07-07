@@ -1,9 +1,19 @@
 import os
 import re
+import json
 import errno
 import hashlib
+import pkg_resources
+try:
+    import requests
+except ImportError:
+    class _MissingRequests(object):
+        def __getattr__(self, name):
+            raise TypeError('requests is not available')
+    requests = _MissingRequests()
 
 from weakref import ref as weakref
+from werkzeug.urls import url_quote
 from werkzeug.datastructures import Headers
 from werkzeug.utils import cached_property
 
@@ -77,7 +87,9 @@ class Person(_MetaViewContainer):
 
     @property
     def twitter(self):
-        return self.meta.get('twitter')
+        rv = self.meta.get('twitter')
+        if rv:
+            return '@' + rv.lstrip('@')
 
     @property
     def email(self):
@@ -85,8 +97,7 @@ class Person(_MetaViewContainer):
 
     def to_json(self, compact=False):
         return {
-            'num': self.num,
-            'id': self.id,
+            'is_member': False,
             'github': self.github,
             'name': self.name,
             'twitter': self.twitter,
@@ -116,8 +127,11 @@ class Member(Person):
     def to_json(self, compact=False):
         if compact:
             return {'num': self.num, 'id': self.id,
-                    'name': self.name}
+                    'name': self.name, 'is_member': True}
         rv = Person.to_json(self, compact=compact)
+        rv['num'] = self.num
+        rv['id'] = self.id
+        rv['is_member'] = True
         if self.sponsor is None:
             rv['sponsor'] = None
         else:
@@ -156,11 +170,11 @@ class Project(_MetaViewContainer):
 
     def __init__(self, metaview, filename):
         _MetaViewContainer.__init__(self, metaview)
-        self.short_name = filename
+        self.internal_name = filename
 
     @property
     def path(self):
-        return os.path.join(self.metaview.projects_path, self.short_name)
+        return os.path.join(self.metaview.projects_path, self.internal_name)
 
     @cached_property
     def meta(self):
@@ -195,6 +209,12 @@ class Project(_MetaViewContainer):
     @property
     def pypi(self):
         return self.meta.get('pypi')
+
+    @property
+    def pypi_url(self):
+        pypi_name = self.pypi
+        if pypi_name is not None:
+            return 'https://pypi.python.org/pypi/%s/' % url_quote(pypi_name)
 
     @property
     def license(self):
@@ -252,23 +272,91 @@ class Project(_MetaViewContainer):
                 rv.append(mem)
         return tuple(rv)
 
+    @cached_property
+    def pypi_info(self):
+        f = self.metaview.open_cache_file('projects', self.internal_name)
+        if f is not None:
+            with f:
+                return json.load(f)
+
+    def sync(self):
+        rv = requests.get(self.pypi_url + '/json')
+        if not rv.ok:
+            return
+        with self.metaview.open_cache_file(
+                'projects', self.internal_name, 'wb') as f:
+            f.write(rv.content)
+
     def to_json(self, compact=False):
+        pypi_info = self.pypi_info or {}
+        latest_release = pypi_info.get('info', {}).get('version')
+
         if compact:
             return {
-                'short_name': self.short_name,
+                'internal_name': self.internal_name,
                 'name': self.name,
                 'github': self.github,
+                'is_extension': self.is_extension,
+                'latest_release': latest_release,
+                'pypi': self.pypi,
                 'stewards': [x.to_json(compact=True) for x in self.stewards],
             }
 
+        def _convert_version(ver):
+            if not ver or ver == 'source':
+                return None
+            return ver
+
+        supports_python3 = False
+        for classifier in pypi_info.get('info', {}).get('classifiers'):
+            if classifier.lower() == 'programming language :: python :: 3':
+                supports_python3 = True
+                break
+
+        download_stats = pypi_info.get('info', {}).get('downloads')
+        if not download_stats:
+            download_stats = {
+                'last_month': 0,
+                'last_week': 0,
+                'last_day': 0,
+            }
+
+        releases = []
+        for ver, items in pypi_info.get('releases', {}).iteritems():
+            downloads = []
+            for d in items:
+                pyver = d.get('python_version')
+                if not pyver or pyver == 'source':
+                    pyver = None
+                downloads.append({
+                    'py_version': ver,
+                    'upload_time': d['upload_time'].rstrip('Z') + 'Z',
+                    'url': d['url'],
+                    'pkg_type': d['packagetype'],
+                    'filename': d['filename'],
+                    'size': d['size'],
+                })
+
+            if not downloads:
+                continue
+
+            releases.append({
+                'version': ver,
+                'downloads': downloads,
+                'release_date': sorted(x['upload_time'] for x in downloads)[0],
+            })
+
+        releases.sort(key=lambda x: pkg_resources.parse_version(x['version']))
+
         return {
-            'short_name': self.short_name,
+            'internal_name': self.internal_name,
             'name': self.name,
             'website': self.website,
             'github': self.github,
             'bugtracker': self.bugtracker,
             'documentation': self.documentation,
             'pypi': self.pypi,
+            'pypi_url': self.pypi_url,
             'license': self.license,
             'status': self.status,
             'readme': self.readme,
@@ -276,13 +364,17 @@ class Project(_MetaViewContainer):
                 and self.extension_status.to_json() or None,
             'is_extension': self.is_extension,
             'project_lead': self.project_lead
-                and self.project_lead.to_json(compact=True) or None,
+                and self.project_lead.to_json() or None,
             'stewards': [x.to_json(compact=True) for x in self.stewards],
+            'supports_python3': supports_python3,
+            'releases': releases,
+            'latest_release': latest_release,
+            'download_stats': download_stats,
         }
 
     def __repr__(self):
         return '<Project %r>' % (
-            self.short_name,
+            self.internal_name,
         )
 
 
@@ -332,7 +424,26 @@ class MetaView(object):
 
         self.projects = {}
         for proj in read_projects(self):
-            self.projects[proj.short_name] = proj
+            self.projects[proj.internal_name] = proj
+
+    @property
+    def cache_path(self):
+        return os.path.join(self.path, '.cache')
+
+    def open_cache_file(self, group, id, mode='rb'):
+        folder = os.path.join(self.cache_path, group)
+        try:
+            os.makedirs(folder)
+        except OSError:
+            pass
+        if not isinstance(id, bytes):
+            id = id.encode('utf-8')
+        h = hashlib.sha1(id).hexdigest()
+        try:
+            return open(os.path.join(folder, h), mode)
+        except IOError as e:
+            if e.errno != errno.ENOENT:
+                raise
 
     def to_json(self):
         return {
@@ -345,7 +456,7 @@ class MetaView(object):
 
     def iter_projects(self):
         return iter(sorted(self.projects.values(),
-                           key=lambda x: x.short_name))
+                           key=lambda x: x.internal_name))
 
     def iter_extensions(self):
         return [x for x in self.iter_projects() if x.is_extension]
@@ -378,6 +489,5 @@ class MetaView(object):
 
 
 if __name__ == '__main__':
-    import json
     mv = MetaView(os.path.join(os.path.dirname(__file__), '..'))
     print json.dumps(mv.to_json(), indent=2)
