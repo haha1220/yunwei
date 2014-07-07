@@ -96,14 +96,16 @@ class Person(_MetaViewContainer):
         return self.meta.get('e-mail')
 
     def to_json(self, compact=False):
-        return {
+        rv = {
             'is_member': False,
             'github': self.github,
             'name': self.name,
             'twitter': self.twitter,
             'email': self.email,
-            'description': self.description,
         }
+        if not compact:
+            rv['description'] = self.description
+        return rv
 
     def __repr__(self):
         return '<Person %r>' % (
@@ -125,13 +127,12 @@ class Member(Person):
             return self.metaview.members_by_github.get(sponsor)
 
     def to_json(self, compact=False):
-        if compact:
-            return {'num': self.num, 'id': self.id,
-                    'name': self.name, 'is_member': True}
         rv = Person.to_json(self, compact=compact)
         rv['num'] = self.num
         rv['id'] = self.id
         rv['is_member'] = True
+        if compact:
+            return rv
         if self.sponsor is None:
             rv['sponsor'] = None
         else:
