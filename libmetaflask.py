@@ -120,6 +120,10 @@ class Member(Person):
         self.num = num
         self.id = id
 
+    @property
+    def is_active(self):
+        return self.meta.get('active', 'yes').lower() == 'yes'
+
     @cached_property
     def sponsor(self):
         sponsor = self.meta.get('sponsor')
@@ -131,6 +135,7 @@ class Member(Person):
         rv['num'] = self.num
         rv['id'] = self.id
         rv['is_member'] = True
+        rv['is_active'] = self.is_active
         if compact:
             return rv
         if self.sponsor is None:
