@@ -209,6 +209,18 @@ def list_projects_api():
     }
 
 
+@app.route('/needs-stewards')
+@api_endpoint
+def list_needs_stewards_api():
+    """Returns a list of all projects that don't have stewards."""
+    metaview = get_metaview()
+    projects = [x.to_json(compact=True) for x in metaview.iter_projects()
+                if not x.has_stewards]
+    return {
+        'projects': projects,
+    }
+
+
 @app.route('/extensions')
 @api_endpoint
 def list_extensions_api():

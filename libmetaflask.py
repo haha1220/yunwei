@@ -279,6 +279,10 @@ class Project(_MetaViewContainer):
         return tuple(rv)
 
     @cached_property
+    def has_stewards(self):
+        return len(self.stewards) > 0
+
+    @cached_property
     def pypi_info(self):
         f = self.metaview.open_cache_file('projects', self.internal_name)
         if f is not None:
