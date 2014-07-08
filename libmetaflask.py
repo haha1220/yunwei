@@ -142,6 +142,24 @@ class Member(Person):
             rv['sponsor'] = None
         else:
             rv['sponsor'] = self.sponsor.to_json(compact=True)
+
+        related_projects = []
+        for project in self.metaview.iter_projects():
+            is_lead = project.project_lead is self
+            is_steward = self in project.stewards
+            if not is_lead and not is_steward:
+                continue
+            related_projects.append({
+                'is_steward': is_steward,
+                'is_lead': is_lead,
+                'internal_name': project.internal_name,
+                'name': project.name,
+                'pypi': project.pypi,
+            })
+        related_projects.sort(key=lambda x: (not x['is_lead'],
+                                             not x['is_steward']))
+
+        rv['related_projects'] = related_projects
         return rv
 
     def __repr__(self):
