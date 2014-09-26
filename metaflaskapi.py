@@ -57,7 +57,7 @@ def get_metaview(sync=False):
 
 
 def add_member(username):
-    github_api_request('PUT', 'teams/%s/members/%s' % (
+    github_api_request('PUT', 'teams/%s/memberships/%s' % (
         app.config['MEMBER_TEAM_ID'],
         url_quote(username),
     )).raise_for_status()
@@ -68,6 +68,16 @@ def remove_member(username):
         app.config['MEMBER_TEAM_ID'],
         url_quote(username),
     )).raise_for_status()
+
+
+def member_is_pending(username):
+    rv = github_api_request('GET', 'teams/%s/memberships/%s' % (
+        app.config['MEMBER_TEAM_ID'],
+        url_quote(username),
+    ))
+    if rv.status_code == 404:
+        return False
+    return rv.json().get('state') == 'pending'
 
 
 def get_current_members():
@@ -94,8 +104,11 @@ def sync_members(metaview):
     new_members = set()
     for member in intended_members:
         if member not in current_members:
-            add_member(member)
-            yield 'added', member
+            if member_is_pending(member):
+                yield 'pending', member
+            else:
+                add_member(member)
+                yield 'added', member
         else:
             yield 'retained', member
         new_members.add(member)
@@ -276,6 +289,7 @@ def sync_members_cmd():
             click.style(op, fg={
                 'added': 'green',
                 'retained': 'cyan',
+                'pending': 'cyan',
                 'deleted': 'red',
             }[op]),
             member,
