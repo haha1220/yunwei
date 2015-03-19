@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block head1 %}
+<script type="text/javascript">
+$(document).ready(function(){
+        $("#lotno").change(function(){
+           var p = document.getElementById("lotno").value;
+           var path="http://192.168.91.129/test/"+p;
+            $.ajax({type: "get", async: true,
+               url: path,
+               success: function (data) {
+                   var src=data;
+                   $("#des").val(src);
+               }
+           })
+
+
+        })
+    })
+</script>
+{% endblock %}
+{% block content %}
+  {% if session.logged_in %}
+    <form action="{{ url_for('.Release') }}" method="post" class="add-entry">
+      <dl>
+        <dt>项目名:
+        <dd>
+          <select style="width:110px" name="lotno" id="lotno">
+              <option value="G7" >G7</option>
+              <option value="G7S" selected="selected">G7S</option>
+          </select>
+        </dd>
+        <dt>源主机:
+        <dd><input type="text" size="30" name="src" value="112.124.65.58" disabled>
+        <dt>目标主机:
+        <dd><input type="text" size="30" name="des" id="des">
+        <dd><input type="submit" value="发布">
+      </dl>
+    </form>
+    <p>返回结果:</p>
+       {{ rsync }} </br> 
+    
+  {% endif %}
+{% endblock %}
+
+

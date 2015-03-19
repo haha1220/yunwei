@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+    {% if error %}<p class="error"><strong>Error:</strong> {{ error }}{% endif %}
+    <form  action="{{ url_for('.upload_file') }}" method="POST">
+    <dl>
+        <dt>
+        <dd>
+        <label for="file">文件名：</label>
+        <input type="file" name="file" id="file">
+        </dd>
+        </dt>
+        <br>
+        <dd> <input type="submit" name="submit" value="上传"></dd>
+    </dl>
+    </form>
+
+{% endblock %}

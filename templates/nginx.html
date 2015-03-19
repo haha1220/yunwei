@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block body %}
+  <div id="contrain">
+     <form action="{{ url_for('nginx.install') }}" method="POST">
+         <dl>
+             <dt>软件包名：
+              <dd><input type="text" name="package" id="package"></dd>
+             </dt>
+             <dt>版本号：
+              <dd>
+              <select name="version" id="version" style="width:110px">
+                  <option value="1.4.7">1.4.7</option>
+                  <option value="1.6.2">1.6.2</option>
+              </select>
+              </dd>
+             </dt>
+             <dt>目标主机：
+              <dd><input type="text" name="dst" id="dst"></dd>
+             </dt>
+             <dd><input type="submit" name="Submit" value="安装"></dd>
+         </dl>
+     </form>
+  </div>
+{% endblock %}
